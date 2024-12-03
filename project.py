@@ -12,9 +12,8 @@ import matplotlib
 load_dotenv()
 API_KEY = os.getenv("API_KEY")
 
-
-# Fetch bird observation data
-def observed_US():
+@st.cache_data
+def observed_US_cached():
     url = "https://api.ebird.org/v2/data/obs/US/recent"
     response = requests.get(url, headers={'X-eBirdApiToken': API_KEY})
     if response.status_code == 200:
@@ -27,12 +26,9 @@ def observed_US():
         st.error(f"Error: Received status code {response.status_code}")
         return []
 
-
 # Fetch recent notable observations in a region
 def fetch_notable_observations(region_code, back=14, detail="simple", hotspot=False, max_results=100):
     url = f"https://api.ebird.org/v2/data/obs/{region_code}/recent/notable"
-
-    # Set up query parameters
     params = {
         "back": back,
         "detail": detail,
@@ -40,8 +36,6 @@ def fetch_notable_observations(region_code, back=14, detail="simple", hotspot=Fa
         "maxResults": max_results,
         "sppLocale": "en"  # Default language for species names
     }
-
-    # Make the API request
     response = requests.get(url, headers={'X-eBirdApiToken': API_KEY}, params=params)
 
     if response.status_code == 200:
@@ -54,60 +48,117 @@ def fetch_notable_observations(region_code, back=14, detail="simple", hotspot=Fa
         st.error(f"Error: Received status code {response.status_code}")
         return []
 
-
-# Function to display map for multiple species
-def display_map(species_selected):
-    species_dict = observed_US()
+def display_map(species_selected, pin_color="red"):
+    species_dict = observed_US_cached()
     species_data = [obs for obs in species_dict if obs["comName"] in species_selected]
 
     if not species_data:
         st.error(f"No data available for species: {', '.join(species_selected)}")
         return
 
-    locations = [{"latitude": obs["lat"], "longitude": obs["lng"], "city": obs["locName"], "species": obs["comName"]}
+    # Create a list of locations with species names, latitudes, longitudes, and cities
+    locations = [{"latitude": obs["lat"], "longitude": obs["lng"], "city": obs["locName"], "species": obs["comName"], "population": obs.get("howMany", "N/A")}
                  for obs in species_data if "lat" in obs and "lng" in obs]
 
     if locations:
         df = pd.DataFrame(locations)
 
-        # Calculate center of the map based on the average latitude and longitude
-        center_lat = df["latitude"].mean()
-        center_lon = df["longitude"].mean()
+        # Check if the map center is saved in session state, otherwise calculate the average center
+        if "map_center" not in st.session_state:
+            center_lat = df["latitude"].mean()
+            center_lon = df["longitude"].mean()
+            st.session_state.map_center = (center_lat, center_lon)
+        else:
+            center_lat, center_lon = st.session_state.map_center
 
-        # Set the zoom level based on the number of species selected
-        zoom_level = 6 if len(species_selected) == 1 else 5  # Adjust zoom for one species vs. multiple species
+        # Check if the zoom level is saved in session state, otherwise set it to 3
+        if "zoom_level" not in st.session_state:
+            st.session_state.zoom_level = 3
 
-        # Create the map with larger points and more prominent hover information
+        # Sidebar slider for pin size (default size set to 10)
+        pin_size = st.slider(
+            "Select map pin size",
+            min_value=5,  # Minimum pin size
+            max_value=30,  # Maximum pin size
+            value=10,  # Default pin size
+            step=1
+        )
+
+        # Sidebar slider for zoom level (default zoom level set to 3)
+        zoom_level = st.slider(
+            "Select zoom level",
+            min_value=3,  # Minimum zoom level
+            max_value=10,  # Maximum zoom level
+            value=st.session_state.zoom_level,  # Use stored zoom level
+            step=1
+        )
+
+        # Save the zoom level in session state
+        st.session_state.zoom_level = zoom_level
+
+        # Save the map center position
+        st.session_state.map_center = (center_lat, center_lon)
+
+        # Create the map with individual pins for each species
         fig = px.scatter_mapbox(df, lat='latitude', lon='longitude', zoom=zoom_level,
-                                mapbox_style="open-street-map", hover_name='city', color='species',
-                                opacity=0.7)
+                                mapbox_style="open-street-map", opacity=0.7)
 
-        # Update the hovertemplate to include latitude and longitude
-        fig.update_traces(marker=dict(size=12, color='red', opacity=0.6),
-                          hovertemplate="<b>Location:</b> %{hovertext}<br><b>Latitude:</b> %{lat}<br><b>Longitude:</b> %{lon}<extra></extra>")
+        # Update the hovertemplate and marker color for the same color for all pins
+        fig.update_traces(
+            marker=dict(
+                size=pin_size,  # Use the pin_size argument here
+                color=pin_color,  # Use the pin_color argument here
+                opacity=0.6
+            ),
+            hovertemplate='<b>Species: %{text}</b><br>Location: %{hovertext}<br>Latitude: %{lat}<br>Longitude: %{lon}<extra></extra>',
+            text=df['species'],  # Species name for the hover text
+            hovertext=df['city']  # Location (city) for the hovertext
+        )
 
-        # Update map layout
+        # Update map layout to make the map interactive
         fig.update_layout(
             margin={"r": 0, "t": 0, "l": 0, "b": 0},
             mapbox_center={"lat": center_lat, "lon": center_lon},
+            mapbox=dict(
+                style="open-street-map",
+                zoom=zoom_level,
+                bearing=0,
+                pitch=0
+            ),
+            dragmode="zoom",  # Enable dragging and zooming
+            hovermode="closest",  # Highlight the closest point when hovering
         )
 
         # Display the map
         st.plotly_chart(fig)
 
-        # Display today's date
-        today = datetime.now().strftime("%A, %B %d, %Y")
-        st.markdown(f"<p style='color: green; font-size: 18px;'>Today is {today}</p>", unsafe_allow_html=True)
+        # Persistent Information Box for the selected species
+        st.subheader("Information about selected observations:")
+
+        for species in species_selected:
+            st.markdown(f"### {species}")
+            species_obs = [obs for obs in species_data if obs["comName"] == species]
+
+            for selected_obs in species_obs:
+                # Accessing 'howMany' safely using .get() to avoid KeyError
+                population = selected_obs.get("howMany", "Data not available")
+
+                # Display information about the observation
+                st.markdown(f"**Species Name:** {selected_obs['comName']}")
+                st.markdown(f"**Location:** {selected_obs['locName']}")
+                st.markdown(f"**Latitude:** {selected_obs['lat']}")
+                st.markdown(f"**Longitude:** {selected_obs['lng']}")
+                st.markdown(f"**Observation Date:** {selected_obs['obsDt']}")
+                st.markdown(f"**Population:** {population} birds observed")
+
     else:
         st.error("No location data available for selected species.")
 
 # Function to display recent notable observations in a region
 def display_notable_observations():
     region_code = st.text_input("Enter Region Code (e.g., US for United States)", "")
-
     if region_code:
         notable_data = fetch_notable_observations(region_code)
-
         if notable_data:
             notable_df = pd.DataFrame(notable_data)
             if not notable_df.empty:
@@ -119,10 +170,9 @@ def display_notable_observations():
     else:
         st.warning("Please enter a valid region code.")
 
-
 # Function to display line plot for multiple species
 def display_line_plot(species_selected):
-    species_dict = observed_US()
+    species_dict = observed_US_cached()
     species_data = [obs for obs in species_dict if obs["comName"] in species_selected]
 
     if not species_data:
@@ -140,7 +190,6 @@ def display_line_plot(species_selected):
             })
 
     df = pd.DataFrame(combined_data)
-
     df.sort_values(by="date", inplace=True)
 
     fig, ax = plt.subplots(figsize=(10, 6))
@@ -155,13 +204,11 @@ def display_line_plot(species_selected):
     ax.legend()
 
     plt.xticks(rotation=45, ha="right")
-
     st.pyplot(fig)
-
 
 # Function to display bar graph for multiple species grouped by date
 def display_bar_graph(species_selected):
-    species_dict = observed_US()
+    species_dict = observed_US_cached()
     species_data = [obs for obs in species_dict if obs["comName"] in species_selected]
 
     if not species_data:
@@ -209,10 +256,9 @@ def display_bar_graph(species_selected):
     ax.legend(title="Species")
     st.pyplot(fig)
 
-
 # Function to display interactive table for multiple species
 def display_table(species_selected):
-    species_dict = observed_US()
+    species_dict = observed_US_cached()
     species_data = [obs for obs in species_dict if obs["comName"] in species_selected]
 
     if not species_data:
@@ -221,58 +267,62 @@ def display_table(species_selected):
 
     df = pd.DataFrame(species_data)
 
+    if df.empty:
+        st.error("No data available to display.")
+        return
+
+    # Let the user select data view mode
     selection_choice = st.radio(
         "Select a choice",
         ["Specific Data", "Raw Data"]
     )
 
     if selection_choice == "Specific Data":
-        if not df.empty:
-            # Allow filtering by species
-            species_filter = st.multiselect(
-                "Filter by species:", options=df["comName"].unique()
-            )
-            simplify_data = st.checkbox("Simplify data?")
-            filtered_df = df[df["comName"].isin(species_filter)]
+        # User filtering options
+        species_filter = st.multiselect(
+            "Filter by species:", options=df["comName"].unique()
+        )
+        simplify_data = st.checkbox("Simplify data?")
 
-            # Column names for simplified and raw data views
-            col = ["Species Code", "Common Name", "Scientific Name", "Location ID",
-                   "Location Observed", "Date Observed", "Population", "Latitude",
-                   "Longitude", "Valid Observation", "Reviewed Observation",
-                   "Location Private", "Sub ID"]
+        # Filter DataFrame by selected species
+        filtered_df = df[df["comName"].isin(species_filter)] if species_filter else df
 
-            if species_filter:
-                if simplify_data:
-                    filtered_df = filtered_df.rename(columns={
-                        "comName": col[1],
-                        "sciName": col[2],
-                        "locName": col[4],
-                        "howMany": col[6],
-                        "lat": col[7],
-                        "lng": col[8]
-                    })
-                    st.dataframe(filtered_df[[col[1], col[2], col[4], col[6], col[7], col[8]]])
-                else:
-                    filtered_df = filtered_df.rename(columns={
-                        "speciesCode": col[0],
-                        "comName": col[1],
-                        "sciName": col[2],
-                        "locId": col[3],
-                        "locName": col[4],
-                        "obsDt": col[5],
-                        "howMany": col[6],
-                        "lat": col[7],
-                        "lng": col[8],
-                        "obsValid": col[9],
-                        "obsReviewed": col[10],
-                        "locationPrivate": col[11],
-                        "subId": col[12]
-                    })
-                    st.dataframe(filtered_df[[col[0], col[1], col[2], col[3], col[4], col[5], col[6],
-                                               col[7], col[8], col[9], col[10], col[11], col[12]]])
+        # Define column mappings
+        column_mapping = {
+            "speciesCode": "Species Code",
+            "comName": "Common Name",
+            "sciName": "Scientific Name",
+            "locID": "Location ID",
+            "locName": "Location Observed",
+            "obsDt": "Date Observed",
+            "howMany": "Population",
+            "lat": "Latitude",
+            "lng": "Longitude",
+            "valid": "Valid Observation",
+            "reviewed": "Reviewed Observation",
+            "private": "Location Private",
+            "subID": "Sub ID",
+        }
 
+        # Check for missing columns
+        existing_columns = [col for col in column_mapping.keys() if col in filtered_df.columns]
+        if not existing_columns:
+            st.error("No relevant data available to display.")
+            return
+
+        # Apply renaming
+        filtered_df = filtered_df.rename(columns={k: v for k, v in column_mapping.items() if k in existing_columns})
+
+        # Simplify or display full data
+        if simplify_data:
+            display_columns = ["Common Name", "Scientific Name", "Location Observed", "Population", "Latitude", "Longitude"]
+        else:
+            display_columns = [column_mapping[col] for col in existing_columns]
+
+        # Display DataFrame
+        st.dataframe(filtered_df[display_columns])
     elif selection_choice == "Raw Data":
-        st.info("All information on recently observed bird species is shown below.")
+        # Display raw data without filtering
         st.dataframe(df)
         
 ##################TO DO######################
@@ -320,44 +370,68 @@ def display_table(species_selected):
 # st.write(filtered_df["howMany"].describe())
 #######################################################
 
-
 # Streamlit UI Setup
 st.title("Bird Observation Dashboard")
-st.sidebar.header("Filters and Options")
+st.sidebar.header("Species Selection")
 
-species_dict = observed_US()
-species_list = [i["comName"] for i in species_dict]
-species_list = list(set(species_list))  # Remove duplicates
-species_list.insert(0, "")  # Add empty option
+# Display today's date
+today = datetime.now().strftime("%A, %B %d, %Y")
+st.markdown(f"<p style='color: green; font-size: 18px;'>Today is {today}</p>", unsafe_allow_html=True)
 
-# Sidebar species selection
-species_selected = st.sidebar.multiselect("Select species of birds", species_list)
+# Inform the user about the selection limit
+st.sidebar.info("You can select up to 11 species.")
+st.sidebar.warning("Unselecting all species will close displayed data.")
 
+# Set up species data
+species_dict = observed_US_cached()
+species_list = list({i["comName"] for i in species_dict})  # Remove duplicates
+species_list.sort()  # Optional: Sort for better UI experience
+
+# Sidebar species selection with a max selection limit
+species_selected = st.sidebar.multiselect(
+    "Select species of birds", species_list
+)
+
+# Inform the user about the selected species
 if species_selected:
-    st.info(f"Displaying data for {', '.join(species_selected)}")
+    if len(species_selected) <= 11:
+        st.info(f"Displaying data for: {', '.join(species_selected)}")
+    else:
+        st.warning("Reduce your selection to 11 species or fewer to view data.")
+else:
+    st.info("Please select at least one species from the sidebar to view data.")
 
 # Tabs for different visualizations
 tabs = st.tabs(["Map", "Line Plot", "Bar Graph", "Interactive Table", "Notable Observations"])
 
-# Map Tab
-with tabs[0]:
-    if species_selected:
-        display_map(species_selected)
+# Check the number of selected species
+if len(species_selected) > 11:
+    for i, tab_name in enumerate(["Map", "Line Plot", "Bar Graph", "Interactive Table"]):
+        with tabs[i]:
+            st.error("You can only select up to 11 species. Please reduce your selection.")
+else:
+    for i, tab_name in enumerate(["Map", "Line Plot", "Bar Graph", "Interactive Table"]):
+        with tabs[i]:
+            if species_selected:
+                # Call the respective function based on the tab
+                if tab_name == "Map":
+                    # Use session state to manage the pin color
+                    if "pin_color" not in st.session_state:
+                        st.session_state.pin_color = "#FF0000"
 
-# Line Plot Tab
-with tabs[1]:
-    if species_selected:
-        display_line_plot(species_selected)
+                    pin_color = st.color_picker("Pick a color for map pins", st.session_state.pin_color)
 
-# Bar Graph Tab
-with tabs[2]:
-    if species_selected:
-        display_bar_graph(species_selected)
+                    # Update the map only if the color changes
+                    if pin_color != st.session_state.pin_color:
+                        st.session_state.pin_color = pin_color
 
-# Table Tab
-with tabs[3]:
-    if species_selected:
-        display_table(species_selected)
+                    display_map(species_selected, st.session_state.pin_color)
+                elif tab_name == "Line Plot":
+                    display_line_plot(species_selected)
+                elif tab_name == "Bar Graph":
+                    display_bar_graph(species_selected)
+                elif tab_name == "Interactive Table":
+                    display_table(species_selected)
 
 # Notable Observations Tab (Always available)
 with tabs[4]:

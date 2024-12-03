@@ -8,6 +8,10 @@ from dotenv import load_dotenv
 import os
 import matplotlib
 
+################## TO DO ##################
+# Make 2 columns to show the info of the species selected under the map
+# Button to show the date
+
 # Load environment variables
 load_dotenv()
 API_KEY = os.getenv("API_KEY")
@@ -324,51 +328,6 @@ def display_table(species_selected):
     elif selection_choice == "Raw Data":
         # Display raw data without filtering
         st.dataframe(df)
-        
-##################TO DO######################
-
-# filtered_df = df[df["comName"].isin(species_filter)]
-
-# Allow filtering by observation date
-# min_date = pd.to_datetime(df["obsDt"].min())
-# max_date = pd.to_datetime(df["obsDt"].max())
-# date_range = st.date_input(
-#     "Filter by date range:",
-#     [min_date, max_date],
-#     min_value=min_date,
-#     max_value=max_date,
-# )
-
-# if len(date_range) == 2:
-#     start_date, end_date = date_range
-# filtered_df = filtered_df[
-# (pd.to_datetime(filtered_df["obsDt"]) >= start_date) &
-# (pd.to_datetime(filtered_df["obsDt"]) <= end_date)
-# ]
-
-# Display the filtered data
-# st.dataframe(filtered_df)
-
-
-# Allow user to download the table
-# @st.cache_data
-# def convert_to_csv(dataframe):
-#     return dataframe.to_csv(index=False).encode('utf-8')
-
-
-# csv = convert_to_csv(filtered_df)
-# st.download_button(
-#     label="Download Table as CSV",
-#     data=csv,
-#     file_name='bird_observations.csv',
-#     mime='text/csv',
-# )
-
-# Show summary statistics
-# if "howMany" in filtered_df.columns:
-# st.write("### Summary Statistics:")
-# st.write(filtered_df["howMany"].describe())
-#######################################################
 
 # Streamlit UI Setup
 st.title("Bird Observation Dashboard")
@@ -436,3 +395,48 @@ else:
 # Notable Observations Tab (Always available)
 with tabs[4]:
     display_notable_observations()
+
+##################TO DO######################
+
+# filtered_df = df[df["comName"].isin(species_filter)]
+
+# Allow filtering by observation date
+# min_date = pd.to_datetime(df["obsDt"].min())
+# max_date = pd.to_datetime(df["obsDt"].max())
+# date_range = st.date_input(
+#     "Filter by date range:",
+#     [min_date, max_date],
+#     min_value=min_date,
+#     max_value=max_date,
+# )
+
+# if len(date_range) == 2:
+#     start_date, end_date = date_range
+# filtered_df = filtered_df[
+# (pd.to_datetime(filtered_df["obsDt"]) >= start_date) &
+# (pd.to_datetime(filtered_df["obsDt"]) <= end_date)
+# ]
+
+# Display the filtered data
+# st.dataframe(filtered_df)
+
+
+# Allow user to download the table
+# @st.cache_data
+# def convert_to_csv(dataframe):
+#     return dataframe.to_csv(index=False).encode('utf-8')
+
+
+# csv = convert_to_csv(filtered_df)
+# st.download_button(
+#     label="Download Table as CSV",
+#     data=csv,
+#     file_name='bird_observations.csv',
+#     mime='text/csv',
+# )
+
+# Show summary statistics
+# if "howMany" in filtered_df.columns:
+# st.write("### Summary Statistics:")
+# st.write(filtered_df["howMany"].describe())
+#######################################################

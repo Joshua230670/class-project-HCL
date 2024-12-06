@@ -8,13 +8,10 @@ from dotenv import load_dotenv
 import os
 import matplotlib
 
-################## TO DO ##################
-# Make 2 columns to show the info of the species selected under the map
-# Button to show the date
-
 # Load environment variables
 load_dotenv()
 API_KEY = os.getenv("API_KEY")
+
 
 @st.cache_data
 def observed_US_cached():
@@ -29,6 +26,7 @@ def observed_US_cached():
     else:
         st.error(f"Error: Received status code {response.status_code}")
         return []
+
 
 # Fetch recent notable observations in a region
 def fetch_notable_observations(region_code, back=14, detail="simple", hotspot=False, max_results=100):
@@ -52,6 +50,18 @@ def fetch_notable_observations(region_code, back=14, detail="simple", hotspot=Fa
         st.error(f"Error: Received status code {response.status_code}")
         return []
 
+def info_selected_obs(selected_obs):
+    # Accessing 'howMany' safely using .get() to avoid KeyError
+    population = selected_obs.get("howMany", "Data not available")
+
+    # Display information about the observation
+    st.markdown(f"**Species Name:** {selected_obs['comName']}")
+    st.markdown(f"**Location:** {selected_obs['locName']}")
+    st.markdown(f"**Latitude:** {selected_obs['lat']}")
+    st.markdown(f"**Longitude:** {selected_obs['lng']}")
+    st.markdown(f"**Observation Date:** {selected_obs['obsDt']}")
+    st.markdown(f"**Population:** {population} birds observed")
+
 def display_map(species_selected, pin_color="red"):
     species_dict = observed_US_cached()
     species_data = [obs for obs in species_dict if obs["comName"] in species_selected]
@@ -61,7 +71,8 @@ def display_map(species_selected, pin_color="red"):
         return
 
     # Create a list of locations with species names, latitudes, longitudes, and cities
-    locations = [{"latitude": obs["lat"], "longitude": obs["lng"], "city": obs["locName"], "species": obs["comName"], "population": obs.get("howMany", "N/A")}
+    locations = [{"latitude": obs["lat"], "longitude": obs["lng"], "city": obs["locName"], "species": obs["comName"],
+                  "population": obs.get("howMany", "N/A")}
                  for obs in species_data if "lat" in obs and "lng" in obs]
 
     if locations:
@@ -139,24 +150,26 @@ def display_map(species_selected, pin_color="red"):
         # Persistent Information Box for the selected species
         st.subheader("Information about selected observations:")
 
+        col1, col2 = st.columns(2)
+        i = 0
+
         for species in species_selected:
-            st.markdown(f"### {species}")
             species_obs = [obs for obs in species_data if obs["comName"] == species]
-
-            for selected_obs in species_obs:
-                # Accessing 'howMany' safely using .get() to avoid KeyError
-                population = selected_obs.get("howMany", "Data not available")
-
-                # Display information about the observation
-                st.markdown(f"**Species Name:** {selected_obs['comName']}")
-                st.markdown(f"**Location:** {selected_obs['locName']}")
-                st.markdown(f"**Latitude:** {selected_obs['lat']}")
-                st.markdown(f"**Longitude:** {selected_obs['lng']}")
-                st.markdown(f"**Observation Date:** {selected_obs['obsDt']}")
-                st.markdown(f"**Population:** {population} birds observed")
+            if i < len(species_selected)/2:
+                with col1:
+                    st.markdown(f"### {species}")
+                    for selected_obs in species_obs:
+                        info_selected_obs(selected_obs)
+            else:
+                with col2:
+                    st.markdown(f"### {species}")
+                    for selected_obs in species_obs:
+                        info_selected_obs(selected_obs)
+            i += 1
 
     else:
         st.error("No location data available for selected species.")
+
 
 # Function to display recent notable observations in a region
 def display_notable_observations():
@@ -173,6 +186,7 @@ def display_notable_observations():
             st.error("No data available for the selected region.")
     else:
         st.warning("Please enter a valid region code.")
+
 
 # Function to display line plot for multiple species
 def display_line_plot(species_selected):
@@ -209,6 +223,7 @@ def display_line_plot(species_selected):
 
     plt.xticks(rotation=45, ha="right")
     st.pyplot(fig)
+
 
 # Function to display bar graph for multiple species grouped by date
 def display_bar_graph(species_selected):
@@ -259,6 +274,7 @@ def display_bar_graph(species_selected):
 
     ax.legend(title="Species")
     st.pyplot(fig)
+
 
 # Function to display interactive table for multiple species
 def display_table(species_selected):
@@ -319,7 +335,8 @@ def display_table(species_selected):
 
         # Simplify or display full data
         if simplify_data:
-            display_columns = ["Common Name", "Scientific Name", "Location Observed", "Population", "Latitude", "Longitude"]
+            display_columns = ["Common Name", "Scientific Name", "Location Observed", "Population", "Latitude",
+                               "Longitude"]
         else:
             display_columns = [column_mapping[col] for col in existing_columns]
 
@@ -329,13 +346,61 @@ def display_table(species_selected):
         # Display raw data without filtering
         st.dataframe(df)
 
+
+##################TO DO######################
+
+# filtered_df = df[df["comName"].isin(species_filter)]
+
+# Allow filtering by observation date
+# min_date = pd.to_datetime(df["obsDt"].min())
+# max_date = pd.to_datetime(df["obsDt"].max())
+# date_range = st.date_input(
+#     "Filter by date range:",
+#     [min_date, max_date],
+#     min_value=min_date,
+#     max_value=max_date,
+# )
+
+# if len(date_range) == 2:
+#     start_date, end_date = date_range
+# filtered_df = filtered_df[
+# (pd.to_datetime(filtered_df["obsDt"]) >= start_date) &
+# (pd.to_datetime(filtered_df["obsDt"]) <= end_date)
+# ]
+
+# Display the filtered data
+# st.dataframe(filtered_df)
+
+
+# Allow user to download the table
+# @st.cache_data
+# def convert_to_csv(dataframe):
+#     return dataframe.to_csv(index=False).encode('utf-8')
+
+
+# csv = convert_to_csv(filtered_df)
+# st.download_button(
+#     label="Download Table as CSV",
+#     data=csv,
+#     file_name='bird_observations.csv',
+#     mime='text/csv',
+# )
+
+# Show summary statistics
+# if "howMany" in filtered_df.columns:
+# st.write("### Summary Statistics:")
+# st.write(filtered_df["howMany"].describe())
+#######################################################
+
 # Streamlit UI Setup
 st.title("Bird Observation Dashboard")
 st.sidebar.header("Species Selection")
 
 # Display today's date
-today = datetime.now().strftime("%A, %B %d, %Y")
-st.markdown(f"<p style='color: green; font-size: 18px;'>Today is {today}</p>", unsafe_allow_html=True)
+show_date = st.button("Show date")
+if show_date:
+    today = datetime.now().strftime("%A, %B %d, %Y")
+    st.markdown(f"<p style='color: green; font-size: 18px;'>Today is {today}</p>", unsafe_allow_html=True)
 
 # Inform the user about the selection limit
 st.sidebar.info("You can select up to 11 species.")
@@ -395,48 +460,3 @@ else:
 # Notable Observations Tab (Always available)
 with tabs[4]:
     display_notable_observations()
-
-##################TO DO######################
-
-# filtered_df = df[df["comName"].isin(species_filter)]
-
-# Allow filtering by observation date
-# min_date = pd.to_datetime(df["obsDt"].min())
-# max_date = pd.to_datetime(df["obsDt"].max())
-# date_range = st.date_input(
-#     "Filter by date range:",
-#     [min_date, max_date],
-#     min_value=min_date,
-#     max_value=max_date,
-# )
-
-# if len(date_range) == 2:
-#     start_date, end_date = date_range
-# filtered_df = filtered_df[
-# (pd.to_datetime(filtered_df["obsDt"]) >= start_date) &
-# (pd.to_datetime(filtered_df["obsDt"]) <= end_date)
-# ]
-
-# Display the filtered data
-# st.dataframe(filtered_df)
-
-
-# Allow user to download the table
-# @st.cache_data
-# def convert_to_csv(dataframe):
-#     return dataframe.to_csv(index=False).encode('utf-8')
-
-
-# csv = convert_to_csv(filtered_df)
-# st.download_button(
-#     label="Download Table as CSV",
-#     data=csv,
-#     file_name='bird_observations.csv',
-#     mime='text/csv',
-# )
-
-# Show summary statistics
-# if "howMany" in filtered_df.columns:
-# st.write("### Summary Statistics:")
-# st.write(filtered_df["howMany"].describe())
-#######################################################

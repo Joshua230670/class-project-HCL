@@ -8,7 +8,7 @@ from dotenv import load_dotenv
 import os
 import matplotlib
 
-# Joshua Izquierdo, Andy Garcia (Group 11)
+# Group 11
 # CAP 4104 UHA 1248
 # December 6, 2024
 
